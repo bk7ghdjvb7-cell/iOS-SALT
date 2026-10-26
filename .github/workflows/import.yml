@@ -1,0 +1,26 @@
+name: Import iOS SALT
+on:
+  push:
+    paths:
+      - .github/workflows/import.yml
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack the iOS app
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/app.zip "https://raw.githubusercontent.com/bk7ghdjvb7-cell/SALT/d919445e3a7c5b02f3418d851b485209da32ac98/iOS-SALT.zip"
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          unzip -q /tmp/app.zip -d /tmp/unpacked
+          shopt -s dotglob nullglob
+          mv /tmp/unpacked/iOS-SALT/* .
+          rm -rf .github
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -m "Add the iOS SALT app"
+          git push

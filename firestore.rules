@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isBoard() {
+      return signedIn() && userData().isBoardMember == true;
+    }
+
+    function isActive() {
+      return signedIn() && userData().membershipStatus == 'active';
+    }
+
+    function privilegeUnchanged() {
+      return request.resource.data.isBoardMember == resource.data.isBoardMember
+        && request.resource.data.membershipStatus == resource.data.membershipStatus;
+    }
+
+    function conversationOf(conversationId) {
+      return get(/databases/$(database)/documents/conversations/$(conversationId)).data;
+    }
+
+    function groupOf(chatId) {
+      return get(/databases/$(database)/documents/groupChats/$(chatId)).data;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isBoard());
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.isBoardMember == false
+        && request.resource.data.membershipStatus == 'pending'
+        && !request.resource.data.keys().hasAny(['fcmToken']);
+      allow update: if signedIn() && request.auth.uid == uid && privilegeUnchanged()
+        && request.resource.data.fcmToken == resource.data.fcmToken;
+    }
+
+    match /membershipApplications/{id} {
+      allow create: if signedIn()
+        && request.resource.data.notes == null
+        && request.resource.data.userId == request.auth.uid;
+      allow read: if isBoard() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow update: if isBoard()
+        && request.resource.data.notes == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt']);
+    }
+
+    match /membershipNotes/{id} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /communityNotes/{id} {
+      allow read: if isActive() && resource.data.ciphertext is string;
+      allow write: if false;
+    }
+
+    match /conversations/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.participantIds;
+      allow update: if signedIn() && request.auth.uid in resource.data.participantIds
+        && request.resource.data.participantIds == resource.data.participantIds;
+    }
+
+    match /messages/{id} {
+      allow read: if signedIn()
+        && request.auth.uid in conversationOf(resource.data.conversationId).participantIds;
+      allow create: if signedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.text.matches('enc:v1:.*')
+        && request.auth.uid in conversationOf(request.resource.data.conversationId).participantIds;
+      allow update, delete: if false;
+    }
+
+    match /groupChats/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow write: if false;
+    }
+
+    match /groupMessages/{id} {
+      allow read: if signedIn() && request.auth.uid in groupOf(resource.data.chatId).memberIds;
+      allow create: if signedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.text.matches('enc:v1:.*')
+        && request.auth.uid in groupOf(request.resource.data.chatId).memberIds;
+      allow update, delete: if false;
+    }
+
+    match /posts/{id} {
+      allow read: if signedIn() && resource.data.ciphertext is string;
+      allow write: if false;
+    }
+
+    match /events/{id} {
+      allow read: if true;
+      allow write: if isBoard();
+    }
+
+    match /jobs/{id} {
+      allow read: if true;
+      allow create: if isActive() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isBoard() || (isActive() && resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == resource.data.authorId);
+    }
+
+    match /resources/{id} {
+      allow read: if resource.data.isMemberOnly != true || isActive();
+      allow write: if isBoard();
+    }
+
+    match /rsvps/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create, update: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /payments/{id} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isBoard());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /rateLimits/{id} {
+      allow read, write: if false;
+    }
+    match /blockedAddresses/{id} {
+      allow read, write: if false;
+    }
+    match /blockedAccounts/{id} {
+      allow read, write: if false;
+    }
+    match /chatKeyAttempts/{id} {
+      allow read, write: if false;
+    }
+    match /chatKeyVerifiers/{id} {
+      allow read, write: if false;
+    }
+    match /passwordVerifiers/{id} {
+      allow read, write: if false;
+    }
+    match /fcmTokens/{uid} {
+      allow read: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['token', 'updatedAt'])
+        && request.resource.data.token is string
+        && request.resource.data.token.size() < 4096;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+    match /durableVault/{id} {
+      allow read, write: if false;
+    }
+    match /durableVaultMirror/{id} {
+      allow read, write: if false;
+    }
+    match /moderationReports/{id} {
+      allow read: if isBoard();
+      allow write: if false;
+    }
+  }
+}

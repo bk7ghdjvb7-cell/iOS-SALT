@@ -1,7 +1,0 @@
-xcuserdata/
-*.xcuserstate
-.DS_Store
-functions/node_modules/
-functions/lib/
-functions/.secret.local
-*.log
